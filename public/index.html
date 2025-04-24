@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Address & Postal Code Lookup</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+      }
+
+      body {
+        background-color: #f0f3f8;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 500px;
+        background: white;
+        padding: 25px;
+        border-radius: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      }
+
+      h1 {
+        color: #0066ff;
+        margin-bottom: 25px;
+        text-align: center;
+        font-size: 24px;
+        font-weight: 600;
+      }
+
+      .search-container {
+        margin-bottom: 15px;
+      }
+
+      .mapControls {
+        width: 100%;
+        padding: 15px;
+        font-size: 16px;
+        border: 1px solid #e1e5eb;
+        border-radius: 12px;
+        outline: none;
+        transition: all 0.2s;
+        background: #f8fafc;
+      }
+
+      .mapControls:focus {
+        border-color: #0066ff;
+        background: white;
+        box-shadow: 0 0 0 4px rgba(0, 102, 255, 0.1);
+      }
+
+      #loading {
+        display: none;
+        margin: 10px 0;
+        color: #666;
+        text-align: center;
+        padding: 12px;
+        background: #e8f0fe;
+        border-radius: 12px;
+        font-size: 14px;
+      }
+
+      #locationButton {
+        width: 100%;
+        padding: 15px;
+        background-color: #0066ff;
+        color: white;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 500;
+        transition: all 0.2s;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+
+      #locationButton:hover {
+        background-color: #0052cc;
+      }
+
+      #locationButton:active {
+        transform: scale(0.98);
+      }
+
+      .location-icon {
+        font-size: 18px;
+      }
+
+      .results-container {
+        background: #f8fafc;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .result-item {
+        padding: 15px;
+        border-bottom: 1px solid #e1e5eb;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .result-item:last-child {
+        border-bottom: none;
+      }
+
+      .result-label {
+        color: #64748b;
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .result-value {
+        color: #1e293b;
+        font-size: 16px;
+        font-weight: 500;
+        word-break: break-word;
+      }
+
+      .result-value-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .copy-button {
+        background: transparent;
+        border: none;
+        padding: 6px;
+        cursor: pointer;
+        color: #0066ff;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+      }
+
+      .copy-button:hover {
+        background: rgba(0, 102, 255, 0.1);
+      }
+
+      .copy-button:active {
+        transform: scale(0.95);
+      }
+
+      .copy-icon {
+        width: 20px;
+        height: 20px;
+        transition: all 0.2s;
+      }
+
+      @keyframes copySuccess {
+        0% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.2);
+          color: #10b981;
+        }
+        100% {
+          transform: scale(1);
+          color: #10b981;
+        }
+      }
+
+      .copy-success {
+        animation: copySuccess 0.5s ease-in-out;
+        color: #10b981;
+      }
+
+      @media (max-width: 600px) {
+        body {
+          padding: 15px;
+          background-color: white;
+        }
+
+        .container {
+          padding: 20px 15px;
+          box-shadow: none;
+          border-radius: 0;
+        }
+
+        h1 {
+          font-size: 22px;
+          margin-bottom: 20px;
+        }
+
+        .mapControls,
+        #locationButton {
+          padding: 12px;
+        }
+
+        .result-item {
+          padding: 12px;
+        }
+      }
+    </style>
+    <script>
+      // Global callback function
+      window.initMap = function () {
+        document.getElementById("loading").style.display = "none";
+        var input = document.getElementById("searchMapInput");
+        var autocomplete = new google.maps.places.Autocomplete(input);
+
+        autocomplete.addListener("place_changed", function () {
+          var place = autocomplete.getPlace();
+          console.log(place);
+          document.getElementById("location-snap").innerHTML =
+            place.formatted_address;
+          document.getElementById("lat-span").innerHTML =
+            place.geometry.location.lat();
+          document.getElementById("lon-span").innerHTML =
+            place.geometry.location.lng();
+
+          // Get postal code using Nominatim
+          getPostalCode(
+            place.geometry.location.lat(),
+            place.geometry.location.lng()
+          );
+        });
+
+        // Try to get current location when map is initialized
+        getCurrentLocation();
+      };
+
+      // Function to get current location
+      function getCurrentLocation() {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            function (position) {
+              const lat = position.coords.latitude;
+              const lng = position.coords.longitude;
+
+              // Create a LatLng object
+              const latLng = new google.maps.LatLng(lat, lng);
+
+              // Use the Geocoder to get the address
+              const geocoder = new google.maps.Geocoder();
+              geocoder.geocode(
+                { location: latLng },
+                function (results, status) {
+                  if (status === "OK" && results[0]) {
+                    // Update the input field with the current address
+                    document.getElementById("searchMapInput").value =
+                      results[0].formatted_address;
+
+                    // Update the display
+                    document.getElementById("location-snap").innerHTML =
+                      results[0].formatted_address;
+                    document.getElementById("lat-span").innerHTML = lat;
+                    document.getElementById("lon-span").innerHTML = lng;
+
+                    // Get postal code
+                    getPostalCode(lat, lng);
+                  }
+                }
+              );
+            },
+            function (error) {
+              console.error("Error getting location:", error);
+              alert(
+                "Unable to retrieve your location. Please enter an address manually."
+              );
+            }
+          );
+        } else {
+          alert("Geolocation is not supported by this browser.");
+        }
+      }
+
+      // Function to get postal code from Nominatim
+      async function getPostalCode(lat, lon) {
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
+          );
+          const data = await response.json();
+
+          if (data.address && data.address.postcode) {
+            document.getElementById("postal-code").innerHTML =
+              data.address.postcode;
+          } else {
+            document.getElementById("postal-code").innerHTML =
+              "Postal code not found";
+          }
+        } catch (error) {
+          console.error("Error fetching postal code:", error);
+          document.getElementById("postal-code").innerHTML =
+            "Error fetching postal code";
+        }
+      }
+
+      // Function to load Google Maps API
+      function loadGoogleMaps() {
+        document.getElementById("loading").style.display = "block";
+        fetch("/config")
+          .then((response) => response.json())
+          .then((config) => {
+            const script = document.createElement("script");
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${config.GOOGLE_MAPS_API_KEY}&libraries=places&callback=initMap`;
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+          })
+          .catch((error) => {
+            console.error("Error loading Google Maps:", error);
+            document.getElementById("loading").textContent =
+              "Error loading Google Maps. Please try again.";
+          });
+      }
+
+      // Load Google Maps when the page loads
+      window.onload = loadGoogleMaps;
+
+      // Function to copy postal code
+      function copyPostalCode() {
+        const postalCode = document.getElementById("postal-code").textContent;
+        if (postalCode && postalCode !== "-") {
+          navigator.clipboard
+            .writeText(postalCode)
+            .then(() => {
+              const copyButton = document.getElementById("copy-button");
+              const copyIcon = document.getElementById("copy-icon");
+
+              // Change icon to checkmark
+              copyIcon.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+            `;
+
+              // Add success animation class
+              copyIcon.classList.add("copy-success");
+
+              // Reset after animation
+              setTimeout(() => {
+                copyIcon.classList.remove("copy-success");
+                copyIcon.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                </svg>
+              `;
+              }, 2000);
+            })
+            .catch((err) => {
+              console.error("Failed to copy:", err);
+            });
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Address & Postal Code Lookup</h1>
+      <div id="loading">Loading Google Maps...</div>
+      <div class="search-container">
+        <input
+          id="searchMapInput"
+          class="mapControls"
+          type="text"
+          placeholder="Enter a location"
+        />
+      </div>
+      <button id="locationButton" onclick="getCurrentLocation()">
+        <span class="location-icon">📍</span>
+        Use Current Location
+      </button>
+      <div class="results-container">
+        <div class="result-item">
+          <div class="result-label">Full Address</div>
+          <div class="result-value" id="location-snap">-</div>
+        </div>
+        <div class="result-item">
+          <div class="result-label">Latitude</div>
+          <div class="result-value" id="lat-span">-</div>
+        </div>
+        <div class="result-item">
+          <div class="result-label">Longitude</div>
+          <div class="result-value" id="lon-span">-</div>
+        </div>
+        <div class="result-item">
+          <div class="result-label">Postal Code</div>
+          <div class="result-value-container">
+            <div class="result-value" id="postal-code">-</div>
+            <button
+              class="copy-button"
+              onclick="copyPostalCode()"
+              title="Copy postal code"
+            >
+              <span class="copy-icon" id="copy-icon">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="2"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"
+                  />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
