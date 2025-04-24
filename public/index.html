@@ -183,6 +183,16 @@
         color: #10b981;
       }
 
+      .error-message {
+        color: #ef4444;
+        background: #fee2e2;
+        padding: 12px;
+        border-radius: 12px;
+        margin: 10px 0;
+        font-size: 14px;
+        display: none;
+      }
+
       @media (max-width: 600px) {
         body {
           padding: 15px;
@@ -211,9 +221,11 @@
       }
     </style>
     <script>
-      // Global callback function
+      let isGoogleMapsLoaded = false;
+
       window.initMap = function () {
         document.getElementById("loading").style.display = "none";
+        isGoogleMapsLoaded = true;
         var input = document.getElementById("searchMapInput");
         var autocomplete = new google.maps.places.Autocomplete(input);
 
@@ -227,7 +239,6 @@
           document.getElementById("lon-span").innerHTML =
             place.geometry.location.lng();
 
-          // Get postal code using Nominatim
           getPostalCode(
             place.geometry.location.lat(),
             place.geometry.location.lng()
@@ -241,45 +252,53 @@
       // Function to get current location
       function getCurrentLocation() {
         if (navigator.geolocation) {
+          document.getElementById("loading").style.display = "block";
           navigator.geolocation.getCurrentPosition(
             function (position) {
               const lat = position.coords.latitude;
               const lng = position.coords.longitude;
 
-              // Create a LatLng object
-              const latLng = new google.maps.LatLng(lat, lng);
+              if (isGoogleMapsLoaded) {
+                // Use Google Maps if available
+                const latLng = new google.maps.LatLng(lat, lng);
+                const geocoder = new google.maps.Geocoder();
+                geocoder.geocode(
+                  { location: latLng },
+                  function (results, status) {
+                    if (status === "OK" && results[0]) {
+                      // Update the input field with the current address
+                      document.getElementById("searchMapInput").value =
+                        results[0].formatted_address;
 
-              // Use the Geocoder to get the address
-              const geocoder = new google.maps.Geocoder();
-              geocoder.geocode(
-                { location: latLng },
-                function (results, status) {
-                  if (status === "OK" && results[0]) {
-                    // Update the input field with the current address
-                    document.getElementById("searchMapInput").value =
-                      results[0].formatted_address;
+                      // Update the display
+                      document.getElementById("location-snap").innerHTML =
+                        results[0].formatted_address;
+                      document.getElementById("lat-span").innerHTML = lat;
+                      document.getElementById("lon-span").innerHTML = lng;
 
-                    // Update the display
-                    document.getElementById("location-snap").innerHTML =
-                      results[0].formatted_address;
-                    document.getElementById("lat-span").innerHTML = lat;
-                    document.getElementById("lon-span").innerHTML = lng;
-
-                    // Get postal code
-                    getPostalCode(lat, lng);
+                      // Get postal code
+                      getPostalCode(lat, lng);
+                    }
                   }
-                }
-              );
+                );
+              } else {
+                // Fallback to just using coordinates and Nominatim
+                getPostalCode(lat, lng);
+              }
+              document.getElementById("loading").style.display = "none";
             },
             function (error) {
               console.error("Error getting location:", error);
-              alert(
-                "Unable to retrieve your location. Please enter an address manually."
-              );
+              document.getElementById("loading").style.display = "none";
+              document.getElementById("error-message").style.display = "block";
+              document.getElementById("error-message").innerHTML =
+                "Unable to retrieve your location. Please ensure location access is enabled.";
             }
           );
         } else {
-          alert("Geolocation is not supported by this browser.");
+          document.getElementById("error-message").style.display = "block";
+          document.getElementById("error-message").innerHTML =
+            "Geolocation is not supported by this browser.";
         }
       }
 
@@ -294,6 +313,10 @@
           if (data.address && data.address.postcode) {
             document.getElementById("postal-code").innerHTML =
               data.address.postcode;
+            document.getElementById("location-snap").innerHTML =
+              data.display_name || "-";
+            document.getElementById("lat-span").innerHTML = lat;
+            document.getElementById("lon-span").innerHTML = lon;
           } else {
             document.getElementById("postal-code").innerHTML =
               "Postal code not found";
@@ -311,16 +334,30 @@
         fetch("/config")
           .then((response) => response.json())
           .then((config) => {
-            const script = document.createElement("script");
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${config.GOOGLE_MAPS_API_KEY}&libraries=places&callback=initMap`;
-            script.async = true;
-            script.defer = true;
-            document.head.appendChild(script);
+            if (config.GOOGLE_MAPS_API_KEY) {
+              const script = document.createElement("script");
+              script.src = `https://maps.googleapis.com/maps/api/js?key=${config.GOOGLE_MAPS_API_KEY}&libraries=places&callback=initMap`;
+              script.async = true;
+              script.defer = true;
+              script.onerror = function () {
+                console.error("Failed to load Google Maps API");
+                isGoogleMapsLoaded = false;
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("searchMapInput").style.display =
+                  "none";
+                getCurrentLocation(); // Automatically try to get location
+              };
+              document.head.appendChild(script);
+            } else {
+              throw new Error("No API key available");
+            }
           })
           .catch((error) => {
             console.error("Error loading Google Maps:", error);
-            document.getElementById("loading").textContent =
-              "Error loading Google Maps. Please try again.";
+            isGoogleMapsLoaded = false;
+            document.getElementById("loading").style.display = "none";
+            document.getElementById("searchMapInput").style.display = "none";
+            getCurrentLocation(); // Automatically try to get location
           });
       }
 
@@ -368,6 +405,7 @@
     <div class="container">
       <h1>Address & Postal Code Lookup</h1>
       <div id="loading">Loading Google Maps...</div>
+      <div id="error-message"></div>
       <div class="search-container">
         <input
           id="searchMapInput"
